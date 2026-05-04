@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AquaGuard — Smart Water Leak Detection</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#050c14;
+  --bg2:#0a1520;
+  --bg3:#0f1e2e;
+  --panel:#0d1b2a;
+  --border:#1a3050;
+  --border2:#1e3d60;
+  --accent:#00d4ff;
+  --accent2:#0099cc;
+  --warn:#ff6b35;
+  --danger:#ff2d55;
+  --ok:#00e676;
+  --text:#d0e8f8;
+  --muted:#4a7a9b;
+  --mono:'Space Mono',monospace;
+  --sans:'DM Sans',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden;}
+
+/* SCANLINE EFFECT */
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.03) 2px,rgba(0,0,0,0.03) 4px);pointer-events:none;z-index:9999;}
+
+/* HEADER */
+.header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:32px;height:32px;position:relative;}
+.logo-icon svg{width:100%;height:100%;}
+.logo-name{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent);letter-spacing:2px;}
+.logo-sub{font-size:10px;color:var(--muted);letter-spacing:3px;margin-top:1px;}
+.header-status{display:flex;align-items:center;gap:20px;}
+.status-pill{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--muted);}
+.status-dot{width:7px;height:7px;border-radius:50%;animation:pulse 2s infinite;}
+.status-dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok);}
+.status-dot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn);}
+.status-dot.danger{background:var(--danger);box-shadow:0 0 8px var(--danger);}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.header-time{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:1px;}
+
+/* TABS */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 24px;}
+.tab{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;padding:12px 20px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* MAIN LAYOUT */
+.main{padding:20px 24px;max-width:1600px;margin:0 auto;}
+
+/* SECTION */
+.section{display:none;}
+.section.active{display:block;}
+
+/* METRIC CARDS */
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;}
+.metric{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px;position:relative;overflow:hidden;}
+.metric::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent);}
+.metric.warn::before{background:var(--warn);}
+.metric.danger::before{background:var(--danger);}
+.metric.ok::before{background:var(--ok);}
+.metric-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:8px;}
+.metric-value{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--text);line-height:1;}
+.metric-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+.metric-spark{position:absolute;bottom:0;right:0;width:60px;height:30px;opacity:.3;}
+
+/* GRID LAYOUTS */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+.grid-left-wide{display:grid;grid-template-columns:2fr 1fr;gap:16px;}
+.grid-right-wide{display:grid;grid-template-columns:1fr 2fr;gap:16px;}
+
+/* PANEL */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:rgba(0,212,255,.03);}
+.panel-title{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;}
+.panel-body{padding:16px;}
+
+/* PIPE SIMULATION */
+#sim-canvas{width:100%;height:420px;border-radius:0;display:block;}
+
+/* ZONE MAP */
+.zone-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:16px;}
+.zone-cell{border-radius:6px;padding:12px 8px;text-align:center;cursor:pointer;transition:all .2s;border:1px solid transparent;position:relative;}
+.zone-cell:hover{transform:scale(1.04);}
+.zone-cell .z-name{font-family:var(--mono);font-size:10px;letter-spacing:1px;margin-bottom:6px;}
+.zone-cell .z-status{font-size:18px;margin-bottom:4px;}
+.zone-cell .z-val{font-family:var(--mono);font-size:11px;}
+.zone-cell.ok-zone{background:rgba(0,230,118,.08);border-color:rgba(0,230,118,.3);}
+.zone-cell.warn-zone{background:rgba(255,107,53,.08);border-color:rgba(255,107,53,.3);}
+.zone-cell.danger-zone{background:rgba(255,45,85,.12);border-color:rgba(255,45,85,.4);}
+.zone-cell.dead-zone{background:rgba(74,122,155,.08);border-color:rgba(74,122,155,.25);}
+
+/* SLIDERS */
+.slider-group{margin-bottom:16px;}
+.slider-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.slider-name{font-size:12px;color:var(--muted);font-family:var(--mono);letter-spacing:1px;}
+.slider-val{font-family:var(--mono);font-size:12px;color:var(--accent);min-width:48px;text-align:right;}
+input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(--border2);border-radius:2px;outline:none;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--bg);box-shadow:0 0 6px var(--accent);}
+
+/* PREDICTION RESULT */
+.pred-result{padding:20px;text-align:center;border-radius:8px;margin-top:16px;}
+.pred-result.leak{background:rgba(255,45,85,.1);border:1px solid rgba(255,45,85,.4);}
+.pred-result.no-leak{background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.4);}
+.pred-icon{font-size:36px;margin-bottom:8px;}
+.pred-label{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:2px;}
+.pred-conf{font-size:12px;color:var(--muted);margin-top:4px;}
+.conf-bar{height:6px;background:var(--border);border-radius:3px;margin-top:8px;overflow:hidden;}
+.conf-fill{height:100%;border-radius:3px;transition:width .6s ease;}
+
+/* BUTTONS */
+.btn{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;padding:10px 20px;border-radius:4px;cursor:pointer;border:1px solid;transition:all .2s;text-transform:uppercase;}
+.btn-primary{background:rgba(0,212,255,.1);border-color:var(--accent);color:var(--accent);}
+.btn-primary:hover{background:rgba(0,212,255,.2);box-shadow:0 0 12px rgba(0,212,255,.3);}
+.btn-danger{background:rgba(255,45,85,.1);border-color:var(--danger);color:var(--danger);}
+.btn-danger:hover{background:rgba(255,45,85,.2);}
+.btn-ok{background:rgba(0,230,118,.1);border-color:var(--ok);color:var(--ok);}
+.btn-ok:hover{background:rgba(0,230,118,.2);}
+.btn-sm{padding:6px 12px;font-size:10px;}
+
+/* TABLE */
+.data-table{width:100%;border-collapse:collapse;font-size:12px;}
+.data-table th{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--muted);padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);text-transform:uppercase;}
+.data-table td{padding:8px 12px;border-bottom:1px solid rgba(26,48,80,.5);color:var(--text);}
+.data-table tr:last-child td{border-bottom:none;}
+.data-table tr:hover td{background:rgba(0,212,255,.03);}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-family:var(--mono);font-size:9px;letter-spacing:1px;}
+.badge-leak{background:rgba(255,45,85,.15);color:var(--danger);border:1px solid rgba(255,45,85,.3);}
+.badge-ok{background:rgba(0,230,118,.15);color:var(--ok);border:1px solid rgba(0,230,118,.3);}
+.badge-warn{background:rgba(255,107,53,.15);color:var(--warn);border:1px solid rgba(255,107,53,.3);}
+
+/* SELECT */
+select{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer;outline:none;}
+select:focus{border-color:var(--accent);}
+
+/* FILE UPLOAD */
+.upload-zone{border:2px dashed var(--border2);border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:all .2s;}
+.upload-zone:hover{border-color:var(--accent);background:rgba(0,212,255,.03);}
+.upload-zone input{display:none;}
+
+/* CHART CONTAINERS */
+.chart-wrap{position:relative;height:280px;}
+.chart-wrap canvas{max-height:280px;}
+
+/* LOG FEED */
+.log-feed{height:180px;overflow-y:auto;font-family:var(--mono);font-size:11px;display:flex;flex-direction:column-reverse;}
+.log-feed::-webkit-scrollbar{width:4px;}
+.log-feed::-webkit-scrollbar-thumb{background:var(--border2);}
+.log-entry{padding:4px 0;border-bottom:1px solid rgba(26,48,80,.3);display:flex;gap:8px;}
+.log-time{color:var(--muted);min-width:70px;}
+.log-msg{flex:1;}
+.log-msg.leak-log{color:var(--danger);}
+.log-msg.warn-log{color:var(--warn);}
+.log-msg.ok-log{color:var(--ok);}
+.log-msg.info-log{color:var(--muted);}
+
+/* RISK GAUGE */
+.gauge-wrap{display:flex;flex-direction:column;align-items:center;padding:16px;}
+.gauge-label{font-family:var(--mono);font-size:28px;font-weight:700;margin-top:-12px;}
+.gauge-sub{font-size:11px;color:var(--muted);letter-spacing:1px;margin-top:2px;}
+
+/* MODEL SELECTOR */
+.model-btns{display:flex;gap:8px;flex-wrap:wrap;}
+.model-btn{font-family:var(--mono);font-size:10px;padding:6px 14px;border-radius:4px;cursor:pointer;border:1px solid var(--border);color:var(--muted);background:transparent;transition:all .2s;letter-spacing:1px;}
+.model-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(0,212,255,.08);}
+
+/* TOOLTIP */
+.tooltip{position:absolute;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:11px;pointer-events:none;z-index:200;display:none;}
+
+/* PROGRESS */
+.progress-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:8px;}
+.progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width .5s;}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+
+/* ALERT BANNER */
+.alert-banner{display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:6px;margin-bottom:12px;font-size:12px;}
+.alert-banner.alert-danger{background:rgba(255,45,85,.1);border:1px solid rgba(255,45,85,.3);color:var(--danger);}
+.alert-banner.alert-warn{background:rgba(255,107,53,.1);border:1px solid rgba(255,107,53,.3);color:var(--warn);}
+
+/* GRID span */
+.span2{grid-column:span 2;}
+
+@keyframes blinkRed{0%,100%{opacity:1}50%{opacity:.2}}
+.blink-danger{animation:blinkRed 1s infinite;}
+
+/* RESPONSIVE */
+@media(max-width:1100px){
+  .metrics{grid-template-columns:repeat(3,1fr);}
+  .grid-left-wide,.grid-right-wide{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="14" stroke="#00d4ff" stroke-width="1.5"/>
+        <path d="M16 6 C12 12, 8 14, 8 19 A8 8 0 0 0 24 19 C24 14 20 12 16 6Z" fill="rgba(0,212,255,0.2)" stroke="#00d4ff" stroke-width="1.2"/>
+        <path d="M12 20 L14 22 L16 18 L18 22 L20 20" stroke="#ff2d55" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-name">PIPEIQ</div>
+      <div class="logo-sub">LEAK DETECTION SYSTEM v2.4</div>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="status-pill"><div class="status-dot ok" id="sys-dot"></div><span id="sys-status-txt">ONLINE</span></div>
+    <div class="status-pill"><div class="status-dot warn" id="leak-dot"></div><span id="leak-count-hdr">3 LEAKS ACTIVE</span></div>
+    <div class="status-pill"><div class="status-dot danger blink-danger"></div><span>ZONE 2 CRITICAL</span></div>
+    <div class="header-time" id="live-clock">--:--:--</div>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="tabs">
+  <div class="tab active" onclick="switchTab('simulation')">⬡ LIVE SIMULATION</div>
+  <div class="tab" onclick="switchTab('whatif')">⊘ WHAT-IF ANALYSIS</div>
+  <div class="tab" onclick="switchTab('zones')">◈ ZONE MAP</div>
+  <div class="tab" onclick="switchTab('batch')">⊞ BATCH PREDICT</div>
+  <div class="tab" onclick="switchTab('models')">◉ MODEL METRICS</div>
+</nav>
+
+<main class="main">
+
+<!-- ═══════════════ SIMULATION ═══════════════ -->
+<section class="section active" id="sec-simulation">
+  <div class="metrics" id="metrics-row">
+    <div class="metric danger"><div class="metric-label">Active Leaks</div><div class="metric-value" id="m-leaks">3</div><div class="metric-sub">↑2 from last hour</div></div>
+    <div class="metric warn"><div class="metric-label">Avg Pressure</div><div class="metric-value" id="m-pressure">68.4<span style="font-size:12px"> PSI</span></div><div class="metric-sub">Normal: 40–60</div></div>
+    <div class="metric ok"><div class="metric-label">Flow Rate</div><div class="metric-value" id="m-flow">142<span style="font-size:12px"> L/m</span></div><div class="metric-sub">Stable</div></div>
+    <div class="metric"><div class="metric-label">Pipes Monitored</div><div class="metric-value">48</div><div class="metric-sub">4 zones × 12 pipes</div></div>
+    <div class="metric warn"><div class="metric-label">Avg Risk Score</div><div class="metric-value" id="m-risk">0.62</div><div class="metric-sub">↑ Elevated</div></div>
+  </div>
+
+  <div class="grid-left-wide" style="margin-bottom:16px;">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">◈ PIPE NETWORK — LIVE SIMULATION</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-primary btn-sm" onclick="injectLeak()">INJECT LEAK</button>
+          <button class="btn btn-ok btn-sm" onclick="repairAll()">REPAIR ALL</button>
+          <button class="btn btn-sm" style="border-color:var(--muted);color:var(--muted)" onclick="toggleSim()" id="sim-toggle-btn">PAUSE</button>
+        </div>
+      </div>
+      <canvas id="sim-canvas"></canvas>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">⚠ ACTIVE ALERTS</span></div>
+        <div class="panel-body" style="padding:8px;">
+          <div id="alert-list"></div>
+        </div>
+      </div>
+      <div class="panel" style="flex:1;">
+        <div class="panel-header"><span class="panel-title">▸ SYSTEM LOG</span></div>
+        <div class="panel-body" style="padding:8px;">
+          <div class="log-feed" id="log-feed"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">◎ PRESSURE HISTORY (30s)</span></div>
+      <div class="panel-body"><div class="chart-wrap"><canvas id="chart-pressure"></canvas></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">◎ FLOW RATE HISTORY (30s)</span></div>
+      <div class="panel-body"><div class="chart-wrap"><canvas id="chart-flow"></canvas></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ WHAT-IF ═══════════════ -->
+<section class="section" id="sec-whatif">
+  <div class="grid-right-wide">
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">⊘ PARAMETER CONTROLS</span>
+          <select id="wi-model" onchange="updateWhatIf()">
+            <option>Random Forest</option><option>Decision Tree</option><option>Logistic Regression</option><option>SVM</option>
+          </select>
+        </div>
+        <div class="panel-body">
+          <div class="slider-group">
+            <div class="slider-label"><span class="slider-name">PRESSURE (PSI)</span><span class="slider-val" id="lbl-pressure">50</span></div>
+            <input type="range" min="0" max="150" value="50" id="sl-pressure" oninput="updateWhatIf()"/>
+          </div>
+          <div class="slider-group">
+            <div class="slider-label"><span class="slider-name">FLOW RATE (L/min)</span><span class="slider-val" id="lbl-flow">100</span></div>
+            <input type="range" min="0" max="300" value="100" id="sl-flow" oninput="updateWhatIf()"/>
+          </div>
+          <div class="slider-group">
+            <div class="slider-label"><span class="slider-name">TEMPERATURE (°C)</span><span class="slider-val" id="lbl-temp">25</span></div>
+            <input type="range" min="-20" max="120" value="25" id="sl-temp" oninput="updateWhatIf()"/>
+          </div>
+          <div class="slider-group">
+            <div class="slider-label"><span class="slider-name">VIBRATION (mm/s)</span><span class="slider-val" id="lbl-vib">0.5</span></div>
+            <input type="range" min="0" max="5" step="0.1" value="0.5" id="sl-vib" oninput="updateWhatIf()"/>
+          </div>
+          <div class="slider-group">
+            <div class="slider-label"><span class="slider-name">RPM</span><span class="slider-val" id="lbl-rpm">1500</span></div>
+            <input type="range" min="0" max="4000" value="1500" id="sl-rpm" oninput="updateWhatIf()"/>
+          </div>
+          <div class="slider-group">
+            <div class="slider-label"><span class="slider-name">OPERATIONAL HRS</span><span class="slider-val" id="lbl-hours">500</span></div>
+            <input type="range" min="0" max="5000" value="500" id="sl-hours" oninput="updateWhatIf()"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">◈ PREDICTION RESULT</span></div>
+        <div class="panel-body">
+          <div id="wi-result" class="pred-result no-leak">
+            <div class="pred-icon">✓</div>
+            <div class="pred-label" id="wi-label">NO LEAKAGE</div>
+            <div class="pred-conf" id="wi-conf">Confidence: 87%</div>
+            <div class="conf-bar"><div class="conf-fill" id="wi-bar" style="width:87%;background:var(--ok)"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">◎ PRESSURE → LEAK RISK CURVE</span></div>
+        <div class="panel-body"><div class="chart-wrap"><canvas id="chart-risk-pressure"></canvas></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">◎ FEATURE CONTRIBUTION</span></div>
+        <div class="panel-body"><div class="chart-wrap"><canvas id="chart-feature-contrib"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ ZONES ═══════════════ -->
+<section class="section" id="sec-zones">
+  <div class="grid-left-wide">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">◈ ZONE STATUS GRID</span>
+        <button class="btn btn-primary btn-sm" onclick="refreshZones()">REFRESH</button>
+      </div>
+      <div id="zone-grid" class="zone-grid"></div>
+
+      <div style="padding:0 16px 16px;">
+        <div class="panel" style="border-color:var(--border);">
+          <div class="panel-header"><span class="panel-title">◎ LEAKS PER ZONE</span></div>
+          <div class="panel-body"><div class="chart-wrap"><canvas id="chart-zone-bar"></canvas></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">◈ ZONE DETAIL</span></div>
+        <div class="panel-body" id="zone-detail">
+          <div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">Click a zone cell to view details</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">◎ RISK DISTRIBUTION</span></div>
+        <div class="panel-body"><div class="chart-wrap" style="height:220px;"><canvas id="chart-zone-donut"></canvas></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">◎ PIPE CONDITION HEATMAP</span></div>
+        <div class="panel-body" id="heatmap-wrap" style="overflow:auto;"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ BATCH ═══════════════ -->
+<section class="section" id="sec-batch">
+  <div class="grid-left-wide">
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">⊞ UPLOAD DATASET</span></div>
+        <div class="panel-body">
+          <div class="upload-zone" onclick="document.getElementById('csv-input').click()">
+            <input type="file" id="csv-input" accept=".csv" onchange="loadCSV(event)"/>
+            <div style="font-size:32px;margin-bottom:8px;color:var(--accent);">⊞</div>
+            <div style="font-family:var(--mono);font-size:12px;letter-spacing:1px;color:var(--muted);">CLICK TO UPLOAD CSV</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">or use generated sample data below</div>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:8px;">
+            <button class="btn btn-primary" style="flex:1;" onclick="loadSampleData()">LOAD SAMPLE DATA (50 ROWS)</button>
+            <select id="batch-model" style="flex:1;">
+              <option>Random Forest</option><option>Decision Tree</option><option>Logistic Regression</option><option>SVM</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="batch-run-panel" style="display:none;">
+        <div class="panel-header">
+          <span class="panel-title">▸ RUNNING PREDICTIONS</span>
+          <span class="panel-title" id="batch-progress-lbl">0 / 0</span>
+        </div>
+        <div class="panel-body">
+          <div class="progress-bar"><div class="progress-fill" id="batch-progress" style="width:0%"></div></div>
+          <div style="margin-top:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+            <div class="metric ok"><div class="metric-label">No Leak</div><div class="metric-value" id="b-ok">—</div></div>
+            <div class="metric danger"><div class="metric-label">Leak</div><div class="metric-value" id="b-leak">—</div></div>
+            <div class="metric"><div class="metric-label">Accuracy</div><div class="metric-value" id="b-acc">—</div></div>
+          </div>
+          <button class="btn btn-ok" style="width:100%;margin-top:12px;" onclick="downloadResults()">DOWNLOAD RESULTS CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">◈ DATA PREVIEW</span><span id="batch-row-count" style="font-family:var(--mono);font-size:10px;color:var(--muted);"></span></div>
+        <div class="panel-body" style="padding:0;overflow-x:auto;max-height:280px;overflow-y:auto;">
+          <table class="data-table" id="batch-table">
+            <thead><tr><th>Pressure</th><th>Flow Rate</th><th>Temp</th><th>Vibration</th><th>Zone</th><th>Status</th></tr></thead>
+            <tbody id="batch-tbody"><tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">No data loaded</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">◎ PREDICTION DISTRIBUTION</span></div>
+        <div class="panel-body"><div class="chart-wrap"><canvas id="chart-batch-dist"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ MODELS ═══════════════ -->
+<section class="section" id="sec-models">
+  <div class="metrics" style="grid-template-columns:repeat(4,1fr);">
+    <div class="metric ok"><div class="metric-label">Best Model</div><div class="metric-value" style="font-size:14px;margin-top:4px;">RANDOM FOREST</div><div class="metric-sub">Accuracy 99.2%</div></div>
+    <div class="metric"><div class="metric-label">Avg Precision</div><div class="metric-value">0.945</div><div class="metric-sub">Across 4 models</div></div>
+    <div class="metric"><div class="metric-label">Avg Recall</div><div class="metric-value">0.928</div><div class="metric-sub">Across 4 models</div></div>
+    <div class="metric"><div class="metric-label">Avg F1</div><div class="metric-value">0.935</div><div class="metric-sub">Across 4 models</div></div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px;">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">◎ RADAR — MODEL COMPARISON</span></div>
+      <div class="panel-body"><div class="chart-wrap" style="height:320px;"><canvas id="chart-radar"></canvas></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">◎ FEATURE IMPORTANCE</span></div>
+      <div class="panel-body"><div class="chart-wrap" style="height:320px;"><canvas id="chart-feat-imp"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">◎ ACCURACY COMPARISON</span></div>
+      <div class="panel-body"><div class="chart-wrap"><canvas id="chart-acc-bar"></canvas></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">◈ CONFUSION MATRIX</span>
+        <select id="cm-model" onchange="renderConfMatrix()">
+          <option>Random Forest</option><option>Decision Tree</option><option>Logistic Regression</option><option>SVM</option>
+        </select>
+      </div>
+      <div class="panel-body" id="conf-matrix-wrap"></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+// ─── GLOBALS ───
+let simRunning = true;
+let simFrame;
+let pressureHistory = Array(30).fill(50);
+let flowHistory = Array(30).fill(100);
+let logEntries = [];
+let batchData = [];
+let batchResults = [];
+
+// ─── CLOCK ───
+function updateClock(){
+  document.getElementById('live-clock').textContent = new Date().toLocaleTimeString('en-US',{hour12:false});
+}
+setInterval(updateClock,1000); updateClock();
+
+// ─── TABS ───
+function switchTab(id){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+id).classList.add('active');
+  event.target.classList.add('active');
+  if(id==='whatif') initWhatIfCharts();
+  if(id==='zones') initZones();
+  if(id==='models') initModelCharts();
+}
+
+// ─────────────────────────────────────────────────
+//  PIPE SIMULATION CANVAS
+// ─────────────────────────────────────────────────
+const canvas = document.getElementById('sim-canvas');
+const ctx = canvas.getContext('2d');
+
+// Pipe network definition
+const pipes = [];
+const nodes = [];
+const leaks = [];
+const particles = [];
+
+function buildNetwork(){
+  canvas.width = canvas.offsetWidth;
+  canvas.height = 420;
+  pipes.length=0; nodes.length=0;
+
+  const W=canvas.width, H=canvas.height;
+  const cols=5, rows=4, pw=W/(cols+1), ph=H/(rows+1);
+
+  // Create nodes grid
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      nodes.push({x:(c+1)*pw, y:(r+1)*ph, id:`N${r}${c}`, zone:`Zone_${r+1}`, pressure:40+Math.random()*40, flow:80+Math.random()*60});
+    }
+  }
+
+  // Horizontal pipes
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols-1;c++){
+      const a=nodes[r*cols+c], b=nodes[r*cols+c+1];
+      pipes.push({a,b,id:`H${r}${c}`,status:'active',flow:0.5+Math.random()*0.5,leakT:0,zone:`Zone_${r+1}`});
+    }
+  }
+  // Vertical pipes
+  for(let r=0;r<rows-1;r++){
+    for(let c=0;c<cols;c++){
+      const a=nodes[r*cols+c], b=nodes[(r+1)*cols+c];
+      pipes.push({a,b,id:`V${r}${c}`,status:'active',flow:0.5+Math.random()*0.5,leakT:0,zone:`Zone_${Math.floor(c/2)+1}`});
+    }
+  }
+
+  // Seed 3 initial leaks
+  [3,7,15].forEach(i=>{ if(pipes[i]) pipes[i].status='leak'; pipes[i].leakT=0; });
+  updateHeaderMetrics();
+}
+
+function injectLeak(){
+  const candidates = pipes.filter(p=>p.status==='active');
+  if(candidates.length===0){addLog('All pipes monitored — no new leak targets','info-log');return;}
+  const p = candidates[Math.floor(Math.random()*candidates.length)];
+  p.status='leak'; p.leakT=0;
+  addLog(`⚠ LEAK DETECTED — Pipe ${p.id} in ${p.zone}`,'leak-log');
+  updateHeaderMetrics(); renderAlerts();
+}
+
+function repairAll(){
+  let count=0;
+  pipes.forEach(p=>{ if(p.status==='leak'){p.status='active';p.leakT=0;count++;} });
+  leaks.length=0;
+  addLog(`✓ ${count} pipe(s) repaired successfully`,'ok-log');
+  updateHeaderMetrics(); renderAlerts();
+}
+
+let simPaused=false;
+function toggleSim(){
+  simPaused=!simPaused;
+  document.getElementById('sim-toggle-btn').textContent=simPaused?'RESUME':'PAUSE';
+  addLog(simPaused?'Simulation paused':'Simulation resumed','info-log');
+}
+
+function updateHeaderMetrics(){
+  const leakCount = pipes.filter(p=>p.status==='leak').length;
+  document.getElementById('m-leaks').textContent=leakCount;
+  document.getElementById('leak-count-hdr').textContent=`${leakCount} LEAK${leakCount!==1?'S':''} ACTIVE`;
+  const avgP = nodes.reduce((s,n)=>s+n.pressure,0)/nodes.length;
+  document.getElementById('m-pressure').innerHTML=`${avgP.toFixed(1)}<span style="font-size:12px"> PSI</span>`;
+  const avgF = nodes.reduce((s,n)=>s+n.flow,0)/nodes.length;
+  document.getElementById('m-flow').innerHTML=`${avgF.toFixed(0)}<span style="font-size:12px"> L/m</span>`;
+  const risk = Math.min(0.99, leakCount*0.12 + avgP/300 + 0.2).toFixed(2);
+  document.getElementById('m-risk').textContent=risk;
+}
+
+function renderAlerts(){
+  const leakPipes=pipes.filter(p=>p.status==='leak');
+  const html = leakPipes.length===0
+    ? '<div style="color:var(--ok);font-family:var(--mono);font-size:11px;padding:8px;">✓ NO ACTIVE LEAKS</div>'
+    : leakPipes.map(p=>`
+      <div class="alert-banner alert-danger" style="margin-bottom:6px;padding:8px 12px;">
+        <span class="blink-danger">⚠</span>
+        <div>
+          <div style="font-family:var(--mono);font-size:10px;letter-spacing:1px;">PIPE ${p.id} — ${p.zone}</div>
+          <div style="font-size:10px;color:rgba(255,45,85,.7);">Leakage confirmed · Pressure anomaly</div>
+        </div>
+        <button class="btn btn-sm" style="border-color:var(--ok);color:var(--ok);margin-left:auto;" onclick="repairPipe('${p.id}')">FIX</button>
+      </div>`).join('');
+  document.getElementById('alert-list').innerHTML=html;
+}
+
+function repairPipe(id){
+  const p=pipes.find(q=>q.id===id);
+  if(p){p.status='active';p.leakT=0;addLog(`✓ Pipe ${id} repaired`,'ok-log');updateHeaderMetrics();renderAlerts();}
+}
+
+function addLog(msg, cls='info-log'){
+  const time=new Date().toLocaleTimeString('en-US',{hour12:false});
+  logEntries.unshift({time,msg,cls});
+  if(logEntries.length>60) logEntries.pop();
+  const feed=document.getElementById('log-feed');
+  feed.innerHTML=logEntries.map(e=>`<div class="log-entry"><span class="log-time">${e.time}</span><span class="log-msg ${e.cls}">${e.msg}</span></div>`).join('');
+}
+
+// ─── DRAW LOOP ───
+let tick=0;
+function simDraw(){
+  if(!simPaused){
+    tick++;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // Background grid
+    ctx.strokeStyle='rgba(26,48,80,0.3)';
+    ctx.lineWidth=0.5;
+    for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
+    for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
+
+    // Draw pipes
+    pipes.forEach(p=>{
+      const isLeak = p.status==='leak';
+      const isDead = p.status==='dead';
+      ctx.lineWidth = isLeak?3:2;
+
+      if(isLeak){
+        p.leakT=(p.leakT||0)+1;
+        const alpha=0.5+0.3*Math.sin(tick*0.15);
+        ctx.strokeStyle=`rgba(255,45,85,${alpha})`;
+        ctx.setLineDash([4,4]);
+      } else if(isDead){
+        ctx.strokeStyle='rgba(74,122,155,0.3)';
+        ctx.setLineDash([2,6]);
+      } else {
+        const flow=p.flow+0.05*Math.sin(tick*0.05+p.a.x);
+        ctx.strokeStyle=`rgba(0,212,255,${0.25+flow*0.35})`;
+        ctx.setLineDash([]);
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(p.a.x,p.a.y);
+      ctx.lineTo(p.b.x,p.b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Animated flow particles on active pipes
+      if(!isLeak && !isDead && tick%6===0 && Math.random()>0.5){
+        const t=Math.random();
+        particles.push({
+          x:p.a.x+t*(p.b.x-p.a.x),
+          y:p.a.y+t*(p.b.y-p.a.y),
+          dx:(p.b.x-p.a.x)*0.01,
+          dy:(p.b.y-p.a.y)*0.01,
+          life:30+Math.random()*20,
+          maxLife:50
+        });
+      }
+
+      // Leak burst effect
+      if(isLeak){
+        const mx=(p.a.x+p.b.x)/2, my=(p.a.y+p.b.y)/2;
+        const r = 4+3*Math.sin(tick*0.2);
+        const grad=ctx.createRadialGradient(mx,my,0,mx,my,r*3);
+        grad.addColorStop(0,'rgba(255,45,85,0.6)');
+        grad.addColorStop(1,'rgba(255,45,85,0)');
+        ctx.fillStyle=grad;
+        ctx.beginPath();
+        ctx.arc(mx,my,r*3,0,Math.PI*2);
+        ctx.fill();
+        // Drip dots
+        for(let i=0;i<3;i++){
+          const angle=tick*0.1+i*2.1;
+          const dist=6+3*Math.sin(tick*0.3+i);
+          ctx.fillStyle=`rgba(255,45,85,${0.6-i*0.15})`;
+          ctx.beginPath();
+          ctx.arc(mx+Math.cos(angle)*dist,my+Math.sin(angle)*dist+i*2,2-i*0.3,0,Math.PI*2);
+          ctx.fill();
+        }
+      }
+    });
+
+    // Particles
+    for(let i=particles.length-1;i>=0;i--){
+      const p=particles[i];
+      p.x+=p.dx; p.y+=p.dy; p.life--;
+      const alpha=(p.life/p.maxLife)*0.8;
+      ctx.fillStyle=`rgba(0,212,255,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,2,0,Math.PI*2);
+      ctx.fill();
+      if(p.life<=0) particles.splice(i,1);
+    }
+
+    // Draw nodes
+    nodes.forEach(n=>{
+      const isLeakZone=pipes.some(p=>(p.a===n||p.b===n)&&p.status==='leak');
+      ctx.fillStyle=isLeakZone?'rgba(255,45,85,0.9)':'rgba(0,212,255,0.9)';
+      ctx.strokeStyle=isLeakZone?'rgba(255,45,85,0.3)':'rgba(0,212,255,0.3)';
+      ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.arc(n.x,n.y,5,0,Math.PI*2);
+      ctx.fill();
+      ctx.stroke();
+      // Pulse ring
+      if(isLeakZone){
+        const r=8+4*Math.abs(Math.sin(tick*0.15));
+        ctx.strokeStyle=`rgba(255,45,85,${0.3-0.2*Math.abs(Math.sin(tick*0.15))})`;
+        ctx.lineWidth=1;
+        ctx.beginPath();
+        ctx.arc(n.x,n.y,r,0,Math.PI*2);
+        ctx.stroke();
+      }
+    });
+
+    // Update sensor data
+    if(tick%8===0){
+      const leakCount=pipes.filter(p=>p.status==='leak').length;
+      const baseP=50+leakCount*8;
+      const pVal=baseP+6*Math.sin(tick*0.05)+(Math.random()-0.5)*4;
+      const fVal=130-leakCount*15+5*Math.cos(tick*0.07)+(Math.random()-0.5)*6;
+      pressureHistory.push(+pVal.toFixed(1)); if(pressureHistory.length>30) pressureHistory.shift();
+      flowHistory.push(+fVal.toFixed(1)); if(flowHistory.length>30) flowHistory.shift();
+      updateSparkCharts();
+      if(tick%120===0){
+        addLog(`System scan: ${leakCount} leak(s) detected · Avg P: ${pVal.toFixed(1)} PSI`,'info-log');
+      }
+    }
+  }
+  simFrame=requestAnimationFrame(simDraw);
+}
+
+// ─── SPARK CHARTS ───
+let chartPressure, chartFlow;
+function initSparkCharts(){
+  const opts={
+    responsive:true,maintainAspectRatio:false,
+    animation:{duration:0},
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{display:false},
+      y:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}}}
+    }
+  };
+  const labels=Array(30).fill('');
+  chartPressure=new Chart(document.getElementById('chart-pressure'),{type:'line',data:{labels,datasets:[{data:[...pressureHistory],borderColor:'#00d4ff',borderWidth:1.5,fill:true,backgroundColor:'rgba(0,212,255,0.08)',pointRadius:0,tension:0.4}]},options:{...opts,scales:{...opts.scales,y:{...opts.scales.y,min:20,max:120}}}});
+  chartFlow=new Chart(document.getElementById('chart-flow'),{type:'line',data:{labels,datasets:[{data:[...flowHistory],borderColor:'#00e676',borderWidth:1.5,fill:true,backgroundColor:'rgba(0,230,118,0.08)',pointRadius:0,tension:0.4}]},options:{...opts,scales:{...opts.scales,y:{...opts.scales.y,min:40,max:200}}}});
+}
+function updateSparkCharts(){
+  if(!chartPressure||!chartFlow) return;
+  chartPressure.data.datasets[0].data=[...pressureHistory];
+  chartFlow.data.datasets[0].data=[...flowHistory];
+  chartPressure.update('none'); chartFlow.update('none');
+}
+
+// ─────────────────────────────────────────────────
+//  WHAT-IF ANALYSIS
+// ─────────────────────────────────────────────────
+let wiRiskChart, wiContribChart;
+function updateWhatIf(){
+  const p=+document.getElementById('sl-pressure').value;
+  const f=+document.getElementById('sl-flow').value;
+  const t=+document.getElementById('sl-temp').value;
+  const v=+document.getElementById('sl-vib').value;
+  const r=+document.getElementById('sl-rpm').value;
+  const h=+document.getElementById('sl-hours').value;
+  const model=document.getElementById('wi-model').value;
+
+  document.getElementById('lbl-pressure').textContent=p;
+  document.getElementById('lbl-flow').textContent=f;
+  document.getElementById('lbl-temp').textContent=t;
+  document.getElementById('lbl-vib').textContent=v.toFixed(1);
+  document.getElementById('lbl-rpm').textContent=r;
+  document.getElementById('lbl-hours').textContent=h;
+
+  // Simulated risk computation
+  let risk = 0;
+  risk += (p-40)/100 * 0.35;
+  risk += (1-f/300) * 0.25;
+  risk += Math.max(0,(t-70)/80) * 0.15;
+  risk += v/5 * 0.12;
+  risk += (1-r/4000) * 0.08;
+  risk += (h/5000) * 0.05;
+  // Model adjustment
+  const mAdj={RF:1,DT:0.97,LR:0.88,SVM:0.92};
+  const mKey={RF:'RF',DT:'DT','Logistic Regression':'LR',SVM:'SVM'}[model]||'RF';
+  risk = Math.min(0.99, Math.max(0.01, risk*mAdj[mKey]));
+
+  const conf = Math.round(risk*100);
+  const isLeak = risk>0.5;
+  const el=document.getElementById('wi-result');
+  el.className='pred-result '+(isLeak?'leak':'no-leak');
+  document.getElementById('wi-label').textContent=isLeak?'⚠ LEAKAGE DETECTED':'✓ NO LEAKAGE';
+  document.getElementById('wi-conf').textContent=`Confidence: ${conf}%  ·  Risk Score: ${risk.toFixed(3)}`;
+  const bar=document.getElementById('wi-bar');
+  bar.style.width=conf+'%';
+  bar.style.background=isLeak?'var(--danger)':'var(--ok)';
+  document.getElementById('wi-result').querySelector('.pred-icon').textContent=isLeak?'⚠':'✓';
+
+  if(wiRiskChart) updateRiskCurve(p);
+  if(wiContribChart) updateContrib(p,f,t,v,r,h);
+}
+
+function initWhatIfCharts(){
+  if(wiRiskChart) return;
+  const chartOpts={
+    responsive:true,maintainAspectRatio:false,
+    animation:{duration:300},
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}}},
+      y:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}},min:0,max:1}
+    }
+  };
+  const pressures=Array.from({length:30},(_,i)=>Math.round(i*5));
+  const riskData=pressures.map(p=>{
+    let r=(p-40)/100*0.35+0.25*0.25+0.05; return Math.min(0.99,Math.max(0.01,r));
+  });
+  wiRiskChart=new Chart(document.getElementById('chart-risk-pressure'),{
+    type:'line',
+    data:{labels:pressures,datasets:[{data:riskData,borderColor:'#ff6b35',borderWidth:2,fill:true,backgroundColor:'rgba(255,107,53,0.08)',pointRadius:0,tension:0.4,label:'Risk'}]},
+    options:{...chartOpts,plugins:{...chartOpts.plugins,tooltip:{callbacks:{label:c=>`Risk: ${c.parsed.y.toFixed(3)}`}}}}
+  });
+
+  wiContribChart=new Chart(document.getElementById('chart-feature-contrib'),{
+    type:'bar',
+    data:{
+      labels:['Pressure','Flow Rate','Temperature','Vibration','RPM','Op. Hours'],
+      datasets:[{data:[0.35,0.25,0.15,0.12,0.08,0.05],backgroundColor:['rgba(0,212,255,0.7)','rgba(0,212,255,0.6)','rgba(0,212,255,0.5)','rgba(0,212,255,0.4)','rgba(0,212,255,0.35)','rgba(0,212,255,0.3)'],borderColor:'transparent',borderRadius:3}]
+    },
+    options:{...chartOpts,indexAxis:'y',scales:{x:{...chartOpts.scales.x,min:0,max:0.5},y:{...chartOpts.scales.y}}}
+  });
+  updateWhatIf();
+}
+
+function updateRiskCurve(currentP){
+  const pressures=Array.from({length:30},(_,i)=>Math.round(i*5));
+  const riskData=pressures.map(p=>{let r=(p-40)/100*0.35+0.2;return Math.min(0.99,Math.max(0.01,r));});
+  const threshold=pressures.findIndex(p=>p>=currentP);
+  wiRiskChart.data.datasets[0].data=riskData;
+  if(wiRiskChart.data.datasets.length<2){
+    wiRiskChart.data.datasets.push({data:riskData.map((_,i)=>i===threshold?riskData[i]:null),borderColor:'#ff2d55',pointRadius:8,pointBackgroundColor:'#ff2d55',type:'scatter',label:'Current'});
+  } else {
+    wiRiskChart.data.datasets[1].data=riskData.map((_,i)=>i===threshold?riskData[i]:null);
+  }
+  wiRiskChart.update('none');
+}
+
+function updateContrib(p,f,t,v,r,h){
+  const c=[
+    Math.min(0.5,(p-40)/100*0.35+0.05),
+    Math.min(0.5,(1-f/300)*0.25+0.05),
+    Math.min(0.5,Math.max(0,(t-70)/80)*0.15+0.02),
+    Math.min(0.5,v/5*0.12+0.02),
+    Math.min(0.5,(1-r/4000)*0.08+0.01),
+    Math.min(0.5,(h/5000)*0.05+0.01)
+  ];
+  wiContribChart.data.datasets[0].data=c;
+  wiContribChart.data.datasets[0].backgroundColor=c.map(v=>v>0.25?'rgba(255,45,85,0.7)':'rgba(0,212,255,0.6)');
+  wiContribChart.update('none');
+}
+
+// ─────────────────────────────────────────────────
+//  ZONES
+// ─────────────────────────────────────────────────
+const zoneData=[
+  {name:'ZONE 1',blocks:['B1','B2','B3'],pipes:12,leaks:1,dead:1,pressure:52,flow:118,risk:0.32,status:'warn'},
+  {name:'ZONE 2',blocks:['B1','B2','B3'],pipes:12,leaks:3,dead:0,pressure:78,flow:62,risk:0.81,status:'danger'},
+  {name:'ZONE 3',blocks:['B1','B2','B3'],pipes:12,leaks:0,dead:2,pressure:44,flow:140,risk:0.12,status:'dead'},
+  {name:'ZONE 4',blocks:['B1','B2','B3'],pipes:12,leaks:1,dead:0,pressure:48,flow:130,risk:0.28,status:'ok'},
+];
+const pipeStatuses=['active','active','active','active','active','active','leak','dead','active','active','active','active'];
+
+let zonePieChart, zoneBarChart;
+function initZones(){
+  buildZoneGrid();
+  buildHeatmap();
+  if(zonePieChart) return;
+  zonePieChart=new Chart(document.getElementById('chart-zone-donut'),{
+    type:'doughnut',
+    data:{
+      labels:zoneData.map(z=>z.name),
+      datasets:[{data:zoneData.map(z=>Math.round(z.risk*100)),backgroundColor:['rgba(255,107,53,0.7)','rgba(255,45,85,0.7)','rgba(74,122,155,0.7)','rgba(0,230,118,0.7)'],borderColor:'var(--panel)',borderWidth:2}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'bottom',labels:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9},boxWidth:10}}}}
+  });
+  zoneBarChart=new Chart(document.getElementById('chart-zone-bar'),{
+    type:'bar',
+    data:{
+      labels:zoneData.map(z=>z.name),
+      datasets:[
+        {label:'Leaks',data:zoneData.map(z=>z.leaks),backgroundColor:'rgba(255,45,85,0.7)',borderColor:'transparent',borderRadius:3},
+        {label:'Dead',data:zoneData.map(z=>z.dead),backgroundColor:'rgba(74,122,155,0.5)',borderColor:'transparent',borderRadius:3}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9},boxWidth:10}}},
+      scales:{
+        x:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}}},
+        y:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}},min:0,max:5}
+      }
+    }
+  });
+}
+
+function buildZoneGrid(){
+  const grid=document.getElementById('zone-grid');
+  const cls={ok:'ok-zone',warn:'warn-zone',danger:'danger-zone',dead:'dead-zone'};
+  const icon={ok:'✓',warn:'⚠',danger:'⊗',dead:'○'};
+  grid.innerHTML=zoneData.map((z,i)=>`
+    <div class="zone-cell ${cls[z.status]}" onclick="showZoneDetail(${i})">
+      <div class="z-name">${z.name}</div>
+      <div class="z-status" style="color:${z.status==='danger'?'var(--danger)':z.status==='warn'?'var(--warn)':z.status==='ok'?'var(--ok)':'var(--muted)'}">${icon[z.status]}</div>
+      <div class="z-val" style="color:${z.status==='danger'?'var(--danger)':z.status==='warn'?'var(--warn)':z.status==='ok'?'var(--ok)':'var(--muted)'}">${z.leaks} LEAKS</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;">Risk: ${Math.round(z.risk*100)}%</div>
+    </div>`).join('')+
+  // Block cells
+  ['BLOCK A','BLOCK B','BLOCK C','BLOCK D','PIPE 1/A','PIPE 2/A','PIPE 3/A','PIPE 4/A',
+   'PIPE 1/B','PIPE 2/B','PIPE 3/B','DEAD 1/C'].map((name,i)=>{
+    const st=['ok','ok','warn','ok','ok','ok','leak','dead','ok','ok','warn','dead'][i];
+    const c=cls[st]||'ok-zone';
+    return `<div class="zone-cell ${c}" style="font-size:10px;">
+      <div class="z-name" style="font-size:9px;">${name}</div>
+      <div style="font-size:14px;color:${st==='leak'?'var(--danger)':st==='warn'?'var(--warn)':st==='dead'?'var(--muted)':'var(--ok)'}">
+        ${st==='leak'?'⊗':st==='warn'?'⚠':st==='dead'?'○':'✓'}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showZoneDetail(i){
+  const z=zoneData[i];
+  const col=z.status==='danger'?'var(--danger)':z.status==='warn'?'var(--warn)':z.status==='ok'?'var(--ok)':'var(--muted)';
+  document.getElementById('zone-detail').innerHTML=`
+    <div style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px;">
+      <div style="font-family:var(--mono);font-size:14px;color:${col};">${z.name}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;">${z.status.toUpperCase()} STATUS</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      ${[['Pipes',z.pipes],['Leaks',z.leaks],['Dead Pipes',z.dead],['Risk Score',Math.round(z.risk*100)+'%'],['Pressure',z.pressure+' PSI'],['Flow Rate',z.flow+' L/m']].map(([k,v])=>`
+        <div class="metric" style="padding:10px 12px;"><div class="metric-label">${k}</div><div class="metric-value" style="font-size:16px;">${v}</div></div>
+      `).join('')}
+    </div>
+    <div style="margin-top:12px;">
+      <button class="btn btn-danger btn-sm" style="width:100%;" onclick="alert('Maintenance request sent for ${z.name}')">REQUEST MAINTENANCE</button>
+    </div>`;
+}
+
+function refreshZones(){
+  zoneData.forEach(z=>{ z.pressure=Math.round(40+Math.random()*40); z.flow=Math.round(80+Math.random()*80); });
+  buildZoneGrid();
+  addLog('Zone data refreshed','info-log');
+}
+
+function buildHeatmap(){
+  const wrap=document.getElementById('heatmap-wrap');
+  const zones=['Z1','Z2','Z3','Z4'];
+  const blocks=['B1','B2','B3'];
+  let html='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+  html+='<tr><th style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:6px;"></th>';
+  blocks.forEach(b=>{ html+=`<th style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:6px;">${b}</th>`; });
+  html+='</tr>';
+  zones.forEach(z=>{
+    html+=`<tr><td style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:6px;">${z}</td>`;
+    blocks.forEach(()=>{
+      const v=Math.random();
+      const r=Math.round(v*255),g=Math.round((1-v)*200),b2=40;
+      html+=`<td style="background:rgba(${r},${g},${b2},0.4);padding:8px 4px;text-align:center;border:1px solid var(--bg);border-radius:3px;font-family:var(--mono);font-size:9px;color:white;">${(v).toFixed(2)}</td>`;
+    });
+    html+='</tr>';
+  });
+  html+='</table>';
+  wrap.innerHTML=html;
+}
+
+// ─────────────────────────────────────────────────
+//  BATCH PREDICTION
+// ─────────────────────────────────────────────────
+let batchDistChart;
+
+function generateRow(){
+  const z=['Zone_1','Zone_2','Zone_3','Zone_4'];
+  const pressure=20+Math.random()*100;
+  const flow=20+Math.random()*200;
+  const temp=-10+Math.random()*80;
+  const vib=Math.random()*3;
+  const zone=z[Math.floor(Math.random()*4)];
+  return {Pressure:+pressure.toFixed(1),Flow_Rate:+flow.toFixed(1),Temperature:+temp.toFixed(1),Vibration:+vib.toFixed(2),Zone:zone,RPM:Math.round(500+Math.random()*3000),Operational_Hours:Math.round(Math.random()*5000),Leakage_Flag:Math.random()>0.65?1:0};
+}
+
+function loadSampleData(){
+  batchData=Array.from({length:50},generateRow);
+  renderBatchTable();
+  runBatchPredict();
+}
+
+function loadCSV(event){
+  const file=event.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const lines=e.target.result.trim().split('\n');
+    const headers=lines[0].split(',').map(h=>h.trim());
+    batchData=lines.slice(1).map(l=>{
+      const vals=l.split(',');
+      const row={};
+      headers.forEach((h,i)=>row[h]=isNaN(vals[i])?vals[i]:+vals[i]);
+      return row;
+    });
+    renderBatchTable();
+    runBatchPredict();
+  };
+  reader.readAsText(file);
+}
+
+function renderBatchTable(){
+  document.getElementById('batch-row-count').textContent=`${batchData.length} ROWS`;
+  const tbody=document.getElementById('batch-tbody');
+  tbody.innerHTML=batchData.slice(0,20).map(row=>`
+    <tr>
+      <td>${row.Pressure}</td>
+      <td>${row.Flow_Rate}</td>
+      <td>${row.Temperature}</td>
+      <td>${row.Vibration}</td>
+      <td>${row.Zone||'—'}</td>
+      <td><span class="badge badge-warn">PENDING</span></td>
+    </tr>`).join('');
+}
+
+function predictRow(row){
+  const model=document.getElementById('batch-model').value;
+  const mAdj={RF:1,'Random Forest':1,'Decision Tree':0.97,'Logistic Regression':0.88,SVM:0.92};
+  let risk=(row.Pressure-40)/100*0.35+(1-row.Flow_Rate/300)*0.25+Math.max(0,(row.Temperature-70)/80)*0.15+(row.Vibration||0)/5*0.12+(row.Operational_Hours||0)/5000*0.05;
+  risk=Math.min(0.99,Math.max(0.01,risk*(mAdj[model]||1)));
+  return {pred:risk>0.5?1:0, conf:risk};
+}
+
+async function runBatchPredict(){
+  document.getElementById('batch-run-panel').style.display='block';
+  batchResults=[];
+  let done=0;
+  for(const row of batchData){
+    await new Promise(r=>setTimeout(r,30));
+    const {pred,conf}=predictRow(row);
+    batchResults.push({...row,Prediction:pred,Confidence:+conf.toFixed(3)});
+    done++;
+    const pct=Math.round(done/batchData.length*100);
+    document.getElementById('batch-progress').style.width=pct+'%';
+    document.getElementById('batch-progress-lbl').textContent=`${done} / ${batchData.length}`;
+  }
+  const leaks=batchResults.filter(r=>r.Prediction===1).length;
+  const noLeaks=batchResults.length-leaks;
+  document.getElementById('b-leak').textContent=leaks;
+  document.getElementById('b-ok').textContent=noLeaks;
+  // Accuracy vs ground truth
+  const withGT=batchResults.filter(r=>r.Leakage_Flag!==undefined);
+  const acc=withGT.length>0?Math.round(withGT.filter(r=>r.Prediction===r.Leakage_Flag).length/withGT.length*100)+'%':'N/A';
+  document.getElementById('b-acc').textContent=acc;
+  // Update table
+  document.getElementById('batch-tbody').innerHTML=batchResults.slice(0,20).map(row=>`
+    <tr>
+      <td>${row.Pressure}</td><td>${row.Flow_Rate}</td><td>${row.Temperature}</td><td>${row.Vibration}</td>
+      <td>${row.Zone||'—'}</td>
+      <td><span class="badge ${row.Prediction===1?'badge-leak':'badge-ok'}">${row.Prediction===1?'LEAK':'OK'}</span></td>
+    </tr>`).join('');
+  // Distribution chart
+  if(!batchDistChart){
+    batchDistChart=new Chart(document.getElementById('chart-batch-dist'),{
+      type:'bar',
+      data:{labels:['No Leak','Leak'],datasets:[{data:[noLeaks,leaks],backgroundColor:['rgba(0,230,118,0.7)','rgba(255,45,85,0.7)'],borderColor:'transparent',borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:10}}},y:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:10}}}}}
+    });
+  } else {
+    batchDistChart.data.datasets[0].data=[noLeaks,leaks];
+    batchDistChart.update();
+  }
+  addLog(`Batch prediction complete: ${leaks} leaks in ${batchData.length} samples`,'warn-log');
+}
+
+function downloadResults(){
+  if(!batchResults.length){alert('No results to download');return;}
+  const keys=Object.keys(batchResults[0]);
+  const csv=[keys.join(','),...batchResults.map(r=>keys.map(k=>r[k]).join(','))].join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='leak_predictions.csv';
+  a.click();
+}
+
+// ─────────────────────────────────────────────────
+//  MODEL METRICS
+// ─────────────────────────────────────────────────
+const modelMetrics={
+  'Random Forest':{acc:0.992,prec:0.98,rec:0.97,f1:0.975},
+  'Decision Tree':{acc:0.951,prec:0.94,rec:0.92,f1:0.93},
+  'Logistic Regression':{acc:0.931,prec:0.92,rec:0.90,f1:0.91},
+  'SVM':{acc:0.944,prec:0.93,rec:0.91,f1:0.92}
+};
+
+const cmData={
+  'Random Forest':[[487,6],[3,504]],'Decision Tree':[[471,22],[19,488]],
+  'Logistic Regression':[[460,33],[28,479]],'SVM':[[469,24],[21,486]]
+};
+
+function initModelCharts(){
+  if(document.getElementById('chart-radar').chart) return;
+
+  // Radar
+  const radarChart=new Chart(document.getElementById('chart-radar'),{
+    type:'radar',
+    data:{
+      labels:['Accuracy','Precision','Recall','F1-Score'],
+      datasets:[
+        {label:'Random Forest',data:[0.992,0.98,0.97,0.975],borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,0.1)',pointBackgroundColor:'#00d4ff'},
+        {label:'Decision Tree',data:[0.951,0.94,0.92,0.93],borderColor:'#00e676',backgroundColor:'rgba(0,230,118,0.1)',pointBackgroundColor:'#00e676'},
+        {label:'Logistic Reg.',data:[0.931,0.92,0.90,0.91],borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.1)',pointBackgroundColor:'#ff6b35'},
+        {label:'SVM',data:[0.944,0.93,0.91,0.92],borderColor:'#ff2d55',backgroundColor:'rgba(255,45,85,0.1)',pointBackgroundColor:'#ff2d55'},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      scales:{r:{grid:{color:'rgba(26,48,80,0.7)'},pointLabels:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}},ticks:{color:'#4a7a9b',backdropColor:'transparent',font:{size:8}},suggestedMin:0.85,suggestedMax:1}},
+      plugins:{legend:{labels:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9},boxWidth:10}}}
+    }
+  });
+
+  // Feature importance
+  new Chart(document.getElementById('chart-feat-imp'),{
+    type:'bar',
+    data:{
+      labels:['Pressure','Flow Rate','Temperature','Vibration','RPM','Op. Hours'],
+      datasets:[{data:[0.30,0.25,0.15,0.10,0.10,0.10],backgroundColor:['rgba(0,212,255,0.8)','rgba(0,212,255,0.7)','rgba(0,212,255,0.6)','rgba(0,212,255,0.5)','rgba(0,212,255,0.4)','rgba(0,212,255,0.35)'],borderColor:'transparent',borderRadius:4}]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false}},
+      scales:{x:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}},min:0,max:0.4},y:{grid:{display:false},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}}}}
+    }
+  });
+
+  // Accuracy bar
+  new Chart(document.getElementById('chart-acc-bar'),{
+    type:'bar',
+    data:{
+      labels:Object.keys(modelMetrics),
+      datasets:[
+        {label:'Accuracy',data:Object.values(modelMetrics).map(m=>m.acc),backgroundColor:'rgba(0,212,255,0.7)',borderColor:'transparent',borderRadius:3},
+        {label:'Precision',data:Object.values(modelMetrics).map(m=>m.prec),backgroundColor:'rgba(0,230,118,0.7)',borderColor:'transparent',borderRadius:3},
+        {label:'Recall',data:Object.values(modelMetrics).map(m=>m.rec),backgroundColor:'rgba(255,107,53,0.7)',borderColor:'transparent',borderRadius:3},
+        {label:'F1',data:Object.values(modelMetrics).map(m=>m.f1),backgroundColor:'rgba(255,45,85,0.7)',borderColor:'transparent',borderRadius:3},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9},boxWidth:10}}},
+      scales:{x:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}}},y:{grid:{color:'rgba(26,48,80,0.5)'},ticks:{color:'#4a7a9b',font:{family:"'Space Mono'",size:9}},min:0.85,max:1.0}}
+    }
+  });
+
+  renderConfMatrix();
+}
+
+function renderConfMatrix(){
+  const model=document.getElementById('cm-model').value;
+  const [[tn,fp],[fn,tp]]=cmData[model]||[[487,6],[3,504]];
+  const total=tn+fp+fn+tp;
+  const wrap=document.getElementById('conf-matrix-wrap');
+  const pct=(v,t)=>(v/t*100).toFixed(1)+'%';
+  wrap.innerHTML=`
+    <div style="display:flex;flex-direction:column;align-items:center;padding:12px;">
+      <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:4px;font-family:var(--mono);font-size:11px;">
+        <div></div><div style="text-align:center;color:var(--muted);padding:6px;font-size:9px;">PRED: NO LEAK</div><div style="text-align:center;color:var(--muted);padding:6px;font-size:9px;">PRED: LEAK</div>
+        <div style="color:var(--muted);font-size:9px;writing-mode:vertical-rl;text-orientation:mixed;padding:6px;text-align:center;">ACT: NO LEAK</div>
+        <div style="background:rgba(0,230,118,0.15);border:1px solid rgba(0,230,118,0.3);border-radius:4px;padding:16px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:var(--ok);">${tn}</div>
+          <div style="font-size:9px;color:var(--ok);">TN · ${pct(tn,total)}</div>
+        </div>
+        <div style="background:rgba(255,45,85,0.1);border:1px solid rgba(255,45,85,0.2);border-radius:4px;padding:16px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:var(--danger);">${fp}</div>
+          <div style="font-size:9px;color:var(--danger);">FP · ${pct(fp,total)}</div>
+        </div>
+        <div style="color:var(--muted);font-size:9px;writing-mode:vertical-rl;text-orientation:mixed;padding:6px;text-align:center;">ACT: LEAK</div>
+        <div style="background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.2);border-radius:4px;padding:16px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:var(--warn);">${fn}</div>
+          <div style="font-size:9px;color:var(--warn);">FN · ${pct(fn,total)}</div>
+        </div>
+        <div style="background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2);border-radius:4px;padding:16px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:var(--accent);">${tp}</div>
+          <div style="font-size:9px;color:var(--accent);">TP · ${pct(tp,total)}</div>
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:16px;font-family:var(--mono);font-size:10px;color:var(--muted);">
+        <span>Accuracy: <span style="color:var(--ok)">${(modelMetrics[model]?.acc*100||99.2).toFixed(1)}%</span></span>
+        <span>Precision: <span style="color:var(--accent)">${(modelMetrics[model]?.prec*100||98).toFixed(1)}%</span></span>
+        <span>Recall: <span style="color:var(--warn)">${(modelMetrics[model]?.rec*100||97).toFixed(1)}%</span></span>
+      </div>
+    </div>`;
+}
+
+// ─── INIT ───
+window.addEventListener('load',()=>{
+  buildNetwork();
+  renderAlerts();
+  addLog('System initialized · AquaGuard v2.4 online','ok-log');
+  addLog('Loaded 48 pipe sensors across 4 zones','info-log');
+  addLog('⚠ Zone 2 pressure anomaly detected','warn-log');
+  addLog('⊗ Pipe H10 leak confirmed','leak-log');
+  setTimeout(()=>{ addLog('ML model ensemble loaded · RF accuracy 99.2%','ok-log'); },500);
+  initSparkCharts();
+  simDraw();
+  // Auto log
+  setInterval(()=>{
+    if(simPaused) return;
+    const msgs=[
+      ['Pressure sensor calibration OK','ok-log'],
+      [`Flow anomaly: ${(80+Math.random()*40).toFixed(1)} L/min in Zone ${Math.ceil(Math.random()*4)}`,'warn-log'],
+      ['Scheduled scan complete','info-log'],
+      [`Vibration spike detected: Pipe V${Math.floor(Math.random()*8)}`,'warn-log'],
+    ];
+    const [msg,cls]=msgs[Math.floor(Math.random()*msgs.length)];
+    addLog(msg,cls);
+  },4000);
+  // Resize
+  window.addEventListener('resize',()=>{ canvas.width=canvas.offsetWidth; buildNetwork(); });
+});
+</script>
+</body>
+</html>

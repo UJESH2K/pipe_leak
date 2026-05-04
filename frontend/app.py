@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 import streamlit as st
 import pandas as pd
 import joblib
+import requests
 import plotly.express as px
 import plotly.graph_objects as go
 import folium
@@ -9,24 +11,73 @@ from streamlit_folium import st_folium
 from folium.plugins import MarkerCluster
 import numpy as np
 from datetime import datetime
-from groq import Groq
 from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent
+
+
+def resolve_path(filename: str) -> Path:
+    """Find file in frontend first, then project root."""
+    frontend_path = BASE_DIR / filename
+    if frontend_path.exists():
+        return frontend_path
+    root_path = ROOT_DIR / filename
+    if root_path.exists():
+        return root_path
+    return frontend_path
+
 
 # Load Models
 models = {
-    "Random Forest": joblib.load("random_forest_model.pkl"),
-    "Decision Tree": joblib.load("decision_tree_model.pkl"),
-    "Logistic Regression": joblib.load("logistic_regression_model.pkl"),
-    "SVM": joblib.load("svm_model.pkl")
+    "Random Forest": joblib.load(resolve_path("random_forest_model.pkl")),
+    "Decision Tree": joblib.load(resolve_path("decision_tree_model.pkl")),
+    "Logistic Regression": joblib.load(resolve_path("logistic_regression_model.pkl")),
+    "SVM": joblib.load(resolve_path("svm_model.pkl"))
 }
 
 load_dotenv()
+AI_MODEL = os.getenv("AI_MODEL", "qwen2.5:1.5b")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
-groq_api_key = os.getenv("GROQ_API_KEY")
-AI_MODEL = os.getenv("AI_MODEL")
 
-# Initialize Groq client
-client = Groq(api_key=groq_api_key)
+def ask_ollama(system_prompt: str, dataset_context: str, user_prompt: str) -> str:
+    base = OLLAMA_BASE_URL.rstrip("/")
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": dataset_context},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    # 1) Native Ollama chat API
+    try:
+        payload = {"model": AI_MODEL, "messages": messages, "stream": False}
+        response = requests.post(f"{base}/api/chat", json=payload, timeout=90)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("message", {}).get("content", "No response received from Ollama.")
+    except requests.HTTPError as exc:
+        if exc.response is None or exc.response.status_code != 404:
+            raise
+
+    # 2) OpenAI-compatible chat API (used by some local LLM servers)
+    try:
+        payload = {"model": AI_MODEL, "messages": messages}
+        response = requests.post(f"{base}/v1/chat/completions", json=payload, timeout=90)
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+    except requests.HTTPError as exc:
+        if exc.response is None or exc.response.status_code != 404:
+            raise
+
+    # 3) Native Ollama generate API fallback
+    prompt = f"{system_prompt}\n\n{dataset_context}\n\nUser: {user_prompt}\nAssistant:"
+    payload = {"model": AI_MODEL, "prompt": prompt, "stream": False}
+    response = requests.post(f"{base}/api/generate", json=payload, timeout=90)
+    response.raise_for_status()
+    data = response.json()
+    return data.get("response", "No response received from local model.")
 
 # Page Config
 st.set_page_config(page_title="Water Leak Detection", layout="wide")
@@ -171,7 +222,7 @@ elif menu == "What-if Analysis":
 elif menu == "Zone Map & Geo Analysis":
     st.subheader("Leakage Risk Map & Zone Analysis")
     try:
-        df = pd.read_csv("location_aware_gis_leakage_dataset.csv")
+        df = pd.read_csv(ROOT_DIR / "data" / "location_aware_gis_leakage_dataset.csv")
     except:
         st.warning("⚠ Could not load full dataset. Using sample instead.")
         df = pd.DataFrame(
@@ -386,7 +437,7 @@ elif menu == "AI Assistant":
 
     # Load dataset for context
     try:
-        df = pd.read_csv("location_aware_gis_leakage_dataset.csv")
+        df = pd.read_csv(ROOT_DIR / "data" / "location_aware_gis_leakage_dataset.csv")
         # Basic stats
         leak_counts = df["Leakage_Flag"].sum()
         total_pipes = len(df)
@@ -413,17 +464,11 @@ elif menu == "AI Assistant":
             st.session_state.chat_history.append(("User", user_input))
 
             # AI response
-            response = client.chat.completions.create(
-                model=AI_MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a water leakage detection expert AI. Use dataset insights provided to answer with professional suggestions."},
-                    {"role": "system", "content": dataset_context},  # inject dataset context
-                    {"role": "user", "content": user_input},
-                ],
-                temperature=0.6,
-                max_tokens=600
+            answer = ask_ollama(
+                "You are a water leakage detection expert AI. Use dataset insights provided to answer with professional suggestions.",
+                dataset_context,
+                user_input,
             )
-            answer = response.choices[0].message.content
             st.session_state.chat_history.append(("AI", answer))
 
             #  Ask-to-Plot feature 
